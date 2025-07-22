@@ -1,55 +1,67 @@
 pipeline {
     agent any
-
+    environment {
+        // Укажите версию Node.js 20+ (путь зависит от вашей системы)
+        PATH = "/usr/local/nodejs-22/bin:${env.PATH}"
+        
+        // Настройки прокси (если требуется; удалите, если не используется)
+        NPM_CONFIG_PROXY = "http://<proxy-url>:<port>"
+        NPM_CONFIG_HTTPS_PROXY = "http://<proxy-url>:<port>"
+        
+        // Увеличенный таймаут для npm
+        NPM_CONFIG_TIMEOUT = "300000"
+    }
     stages {
-        // Stage 1: Клонирование репозитория
         stage('Checkout Repository') {
             steps {
-                git url: 'https://github.com/EndlessEmptiness1nside/juice-shop.git ',
-                     branch: 'master' // или нужная ветка
-                echo "Репозиторий OWASP Juice Shop успешно склонирован" [[2]]
+                checkout scm
             }
         }
-
-        // Stage 2: Установка зависимостей
-        stage('Install Dependencies') {
+        stage('Install Node.js') {
             steps {
                 script {
-                    try {
-                        // Установка Node.js и npm (если не установлено)
-                        sh 'node -v || echo "Node.js не установлен"'
-                        sh 'npm install' // Установка зависимостей из package.json
-                        echo "Зависимости успешно установлены"
-                    } catch (Exception e) {
-                        echo "Ошибка при установке зависимостей: ${e}"
-                        currentBuild.result = 'FAILURE'
-                        throw e
-                    }
+                    // Установка Node.js 22 через nvm (если не установлен)
+                    sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash'
+                    sh 'source ~/.bashrc && nvm install 22 && nvm use 22'
+                    sh 'node -v && npm -v'
                 }
             }
         }
-
-        // Stage 3: Сборка и запуск приложения
+        stage('Install Dependencies') {
+            steps {
+                script {
+                    // Очистка кэша npm (на случай ошибок)
+                    sh 'npm cache clean --force'
+                    
+                    // Установка зависимостей с флагами для уменьшения предупреждений
+                    sh 'npm install --no-fund --no-audit'
+                    
+                    // Обновление уязвимых пакетов
+                    sh 'npm install jsonwebtoken@latest multer@latest eslint@latest'
+                    
+                    // Исправление уязвимостей через npm audit
+                    sh 'npm audit fix'
+                }
+            }
+        }
         stage('Build & Run Application') {
             steps {
                 script {
-                    try {
-                        // Запуск приложения в фоновом режиме
-                        sh 'npm start &'
-                        echo "Приложение запущено на http://localhost:3000"
-                    } catch (Exception e) {
-                        echo "Ошибка запуска приложения: ${e}"
-                        currentBuild.result = 'FAILURE'
-                        throw e
-                    }
+                    // Сборка (если требуется)
+                    sh 'npm run build'
+                    
+                    // Запуск приложения
+                    sh 'npm start'
                 }
             }
         }
     }
-
     post {
-        always {
-            echo "Pipeline завершен. Проверьте результаты в логах."
+        success {
+            echo 'Пайплайн успешно завершен!'
+        }
+        failure {
+            echo 'Ошибка в пайплайне. Проверьте логи.'
         }
     }
 }
