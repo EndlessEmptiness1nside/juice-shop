@@ -1,14 +1,10 @@
 pipeline {
     agent any
     environment {
-        // Укажите путь к Node.js 22+ (если используется системный Node.js)
+        // Путь к Node.js 22
         PATH = "/usr/local/nodejs-22/bin:${env.PATH}"
-        
-        // Путь к NVM
         NVM_DIR = "$HOME/.nvm"
-        
-        // Увеличенный таймаут для npm
-        NPM_CONFIG_TIMEOUT = "300000"
+        PROJECT_DIR = "/var/lib/jenkins/workspace/JUICE_SHOP"
     }
     stages {
         stage('Checkout Repository') {
@@ -19,21 +15,10 @@ pipeline {
         stage('Install Node.js') {
             steps {
                 script {
-                    // Создайте .bashrc, если он отсутствует
-                    sh 'touch $HOME/.bashrc'
-                    
-                    // Установка NVM без автоматического добавления в профиль
-                    sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash || true'
-                    
-                    // Вручную добавьте настройки NVM в .bashrc
-                    sh 'echo "export NVM_DIR=\\"$HOME/.nvm\\"" >> $HOME/.bashrc'
-                    sh 'echo "[ -s \\"$NVM_DIR/nvm.sh\\"" && . "$NVM_DIR/nvm.sh" # Loads nvm" >> $HOME/.bashrc'
-                    
-                    // Перезагрузите окружение с использованием `.` вместо `source`
-                    sh '. "$HOME/.bashrc"'
-                    
-                    // Установите Node.js 22 через NVM
-                    sh '. "$NVM_DIR/nvm.sh" && nvm install 22 && nvm use 22'
+                    // Установка NVM и Node.js 22
+                    sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash'
+                    sh 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"'
+                    sh 'nvm install 22 && nvm use 22'
                     sh 'node -v && npm -v'
                 }
             }
@@ -41,38 +26,72 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Очистка кэша npm
-                    sh 'npm cache clean --force'
+                    // Проверка наличия node_modules
+                    def dependenciesInstalled = sh(
+                        script: 'test -d node_modules',
+                        returnStatus: true
+                    ) == 0
                     
-                    // Установка зависимостей с флагами для уменьшения предупреждений
-                    sh 'npm install --no-fund --no-audit'
-                    
-                    // Обновление уязвимых пакетов
-                    sh 'npm install jsonwebtoken@latest multer@latest eslint@latest'
-                    
-                    // Исправление уязвимостей
-                    sh 'npm audit fix'
+                    if (!dependenciesInstalled) {
+                        echo 'Зависимости не установлены. Начинаю установку...'
+                        
+                        // Очистка кэша npm
+                        sh 'npm cache clean --force'
+                        
+                        // Установка зависимостей с флагами
+                        sh 'npm install --no-fund --no-audit --legacy-peer-deps'
+                        
+                        // Обновление уязвимых пакетов
+                        sh 'npm install jsonwebtoken@latest multer@latest eslint@8.57.1 @typescript-eslint/eslint-plugin@6.18.1 @typescript-eslint/parser@6.18.1'
+                        
+                        // Исправление уязвимостей
+                        sh 'npm audit fix --legacy-peer-deps'
+                    } else {
+                        echo 'Зависимости уже установлены. Пропускаю установку...'
+                    }
                 }
             }
         }
-        stage('Build & Run Application') {
+        stage('Run Semgrep Scan') {
             steps {
                 script {
-                    // Сборка (если требуется)
-                    sh 'npm run build'
+                    // Установка Semgrep (если не установлен)
+                    def semgrepInstalled = sh(
+                        script: 'command -v semgrep',
+                        returnStatus: true
+                    ) == 0
                     
-                    // Запуск приложения
-                    sh 'npm start'
+                    if (!semgrepInstalled) {
+                        echo 'Semgrep не установлен. Начинаю установку...'
+                        sh 'npm install -g @semgrep/cli'
+                    }
+                    
+                    // Запуск сканирования и сохранение отчета в JSON
+                    sh """
+                    semgrep --config=auto \\
+                            --output=${env.PROJECT_DIR}/semgrep_report.json \\
+                            --json \\
+                            ${env.PROJECT_DIR}
+                    """
+                    
+                    // Проверка наличия отчета
+                    sh 'ls -l ${env.PROJECT_DIR}/semgrep_report.json'
                 }
+            }
+        }
+        stage('Archive Report') {
+            steps {
+                // Сохранение JSON-отчета как артефакта
+                archiveArtifacts artifacts: 'semgrep_report.json', allowEmptyArchive: false
             }
         }
     }
     post {
         success {
-            echo 'Пайплайн успешно завершен!'
+            echo 'Сканирование завершено успешно. Отчет сохранен в semgrep_report.json'
         }
         failure {
-            echo 'Ошибка в пайплайне. Проверьте логи.'
+            echo 'Ошибка сканирования. Проверьте логи.'
         }
     }
 }
