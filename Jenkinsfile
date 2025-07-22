@@ -15,11 +15,21 @@ pipeline {
         stage('Install Node.js') {
             steps {
                 script {
-                    // Установка NVM и Node.js 22
-                    sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash'
-                    sh 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"'
-                    sh 'nvm install 22 && nvm use 22'
-                    sh 'node -v && npm -v'
+                    // Установка NVM и Node.js 22 в одной команде
+                    sh """
+                    # Установка NVM
+                    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash
+                    
+                    # Загрузка NVM
+                    export NVM_DIR="$HOME/.nvm"
+                    [ -s "\$NVM_DIR/nvm.sh" ] && \\. "\$NVM_DIR/nvm.sh"
+                    
+                    # Установка и использование Node.js 22
+                    nvm install 22
+                    nvm use 22
+                    node -v
+                    npm -v
+                    """
                 }
             }
         }
@@ -35,14 +45,11 @@ pipeline {
                     if (!dependenciesInstalled) {
                         echo 'Зависимости не установлены. Начинаю установку...'
                         
-                        // Очистка кэша npm
-                        sh 'npm cache clean --force'
-                        
                         // Установка зависимостей с флагами
                         sh 'npm install --no-fund --no-audit --legacy-peer-deps'
                         
                         // Обновление уязвимых пакетов
-                        sh 'npm install jsonwebtoken@latest multer@latest eslint@8.57.1 @typescript-eslint/eslint-plugin@6.18.1 @typescript-eslint/parser@6.18.1'
+                        sh 'npm install jsonwebtoken@latest multer@latest eslint@8.57.1'
                         
                         // Исправление уязвимостей
                         sh 'npm audit fix --legacy-peer-deps'
