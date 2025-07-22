@@ -1,12 +1,11 @@
 pipeline {
     agent any
     environment {
-        // Укажите версию Node.js 20+ (путь зависит от вашей системы)
+        // Укажите путь к Node.js 22+ (если используется системный Node.js)
         PATH = "/usr/local/nodejs-22/bin:${env.PATH}"
         
-        // Настройки прокси (если требуется; удалите, если не используется)
-        NPM_CONFIG_PROXY = "http://<proxy-url>:<port>"
-        NPM_CONFIG_HTTPS_PROXY = "http://<proxy-url>:<port>"
+        // Путь к NVM
+        NVM_DIR = "$HOME/.nvm"
         
         // Увеличенный таймаут для npm
         NPM_CONFIG_TIMEOUT = "300000"
@@ -20,10 +19,21 @@ pipeline {
         stage('Install Node.js') {
             steps {
                 script {
-                    // Установка Node.js 22 через nvm (если не установлен)
-                    sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash'
+                    // Создайте .bashrc, если он отсутствует
                     sh 'touch $HOME/.bashrc'
-                    sh 'source ~/.bashrc && nvm install 22 && nvm use 22'
+                    
+                    // Установка NVM без автоматического добавления в профиль
+                    sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash || true'
+                    
+                    // Вручную добавьте настройки NVM в .bashrc
+                    sh 'echo "export NVM_DIR=\\"$HOME/.nvm\\"" >> $HOME/.bashrc'
+                    sh 'echo "[ -s \\"$NVM_DIR/nvm.sh\\"" && . "$NVM_DIR/nvm.sh" # Loads nvm" >> $HOME/.bashrc'
+                    
+                    // Перезагрузите окружение с использованием `.` вместо `source`
+                    sh '. "$HOME/.bashrc"'
+                    
+                    // Установите Node.js 22 через NVM
+                    sh '. "$NVM_DIR/nvm.sh" && nvm install 22 && nvm use 22'
                     sh 'node -v && npm -v'
                 }
             }
@@ -31,7 +41,7 @@ pipeline {
         stage('Install Dependencies') {
             steps {
                 script {
-                    // Очистка кэша npm (на случай ошибок)
+                    // Очистка кэша npm
                     sh 'npm cache clean --force'
                     
                     // Установка зависимостей с флагами для уменьшения предупреждений
@@ -40,7 +50,7 @@ pipeline {
                     // Обновление уязвимых пакетов
                     sh 'npm install jsonwebtoken@latest multer@latest eslint@latest'
                     
-                    // Исправление уязвимостей через npm audit
+                    // Исправление уязвимостей
                     sh 'npm audit fix'
                 }
             }
