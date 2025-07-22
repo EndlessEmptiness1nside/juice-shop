@@ -12,15 +12,14 @@ pipeline {
         stage('Check and Install Dependencies') {
             steps {
                 script {
-                    docker.image('node:20').inside {
-                        // Задаем переменные окружения для Cypress и npm, чтобы они создавали кэш локально
-                        withEnv(["CYPRESS_CACHE_FOLDER=./.cache/Cypress"]) {
-                            if (fileExists('node_modules')) {
-                                echo "Зависимости уже установлены, пропуск установки."
-                            } else {
-                                echo "Папка node_modules не найдена. Установка зависимостей..."
-                                sh 'npm install --cache ./.npm-cache --no-update-notifier'
-                            }
+                    // Используем .inside() с аргументом -e для установки переменных окружения
+                    // для npm и Cypress
+                    docker.image('node:20').inside('-e CYPRESS_CACHE_FOLDER=./.cache/Cypress') {
+                        if (fileExists('node_modules')) {
+                            echo "Зависимости уже установлены, пропуск установки."
+                        } else {
+                            echo "Папка node_modules не найдена. Установка зависимостей..."
+                            sh 'npm install --cache ./.npm-cache --no-update-notifier'
                         }
                     }
                 }
@@ -30,12 +29,11 @@ pipeline {
         stage('Semgrep Scan') {
             steps {
                 script {
-                    docker.image('semgrep/semgrep').inside {
+                    // Передаем переменную окружения SEMGREP_HOME напрямую в контейнер
+                    // с помощью аргумента -e.
+                    docker.image('semgrep/semgrep').inside('-e SEMGREP_HOME=./.semgrep-home') {
                         echo "Запуск сканирования Semgrep..."
-                        // Устанавливаем переменную SEMGREP_HOME, чтобы избежать проблем с правами доступа
-                        withEnv(["SEMGREP_HOME=./.semgrep-home"]) {
-                            sh 'semgrep scan --config="p/default" --error --output="semgrep-report.json" --json .'
-                        }
+                        sh 'semgrep scan --config="p/default" --error --output="semgrep-report.json" --json .'
                     }
                 }
             }
@@ -43,9 +41,11 @@ pipeline {
     }
 
     post {
+        // Блок always гарантирует, что артефакты будут заархивированы
+        // даже если этап сканирования завершится с ошибкой (например, из-за --error)
         always {
             echo "Архивация отчета Semgrep..."
-            archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true
+            archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true, allowEmptyArchive: true
             
             echo "Пайплайн завершил работу."
         }
