@@ -1,104 +1,52 @@
 pipeline {
     agent any
-    environment {
-        // Путь к Node.js 22
-        PATH = "/usr/local/nodejs-22/bin:${env.PATH}"
-        NVM_DIR = "$HOME/.nvm"
-        PROJECT_DIR = "/var/lib/jenkins/workspace/JUICE_SHOP"
-    }
+
     stages {
-        stage('Checkout Repository') {
+        stage('Checkout') {
             steps {
-                checkout scm
+                git 'https://github.com/juice-shop/juice-shop.git'
             }
         }
-        stage('Install Node.js') {
+
+        stage('Проверка и установка зависимостей') {
             steps {
                 script {
-                    // Установка NVM и Node.js 22 в одной команде
-                    sh """
-                    # Установка NVM
-                    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash
-                    
-                    # Загрузка NVM
-                    export NVM_DIR="$HOME/.nvm"
-                    [ -s "\$NVM_DIR/nvm.sh" ] && \\. "\$NVM_DIR/nvm.sh"
-                    
-                    # Установка и использование Node.js 22
-                    nvm install 22
-                    nvm use 22
-                    node -v
-                    npm -v
-                    """
-                }
-            }
-        }
-        stage('Install Dependencies') {
-            steps {
-                script {
-                    // Проверка наличия node_modules
-                    def dependenciesInstalled = sh(
-                        script: 'test -d node_modules',
-                        returnStatus: true
-                    ) == 0
-                    
-                    if (!dependenciesInstalled) {
-                        echo 'Зависимости не установлены. Начинаю установку...'
-                        
-                        // Установка зависимостей с флагами
-                        sh 'npm install --no-fund --no-audit --legacy-peer-deps'
-                        
-                        // Обновление уязвимых пакетов
-                        sh 'npm install jsonwebtoken@latest multer@latest eslint@8.57.1'
-                        
-                        // Исправление уязвимостей
-                        sh 'npm audit fix --legacy-peer-deps'
+                    // Проверяем, существует ли директория node_modules
+                    if (!fileExists('node_modules')) {
+                        echo 'Зависимости не найдены. Запускается npm install...'
+                        // Для установки зависимостей используется образ Node.js
+                        docker.image('node:20').inside {
+                            sh 'npm install'
+                        }
                     } else {
-                        echo 'Зависимости уже установлены. Пропускаю установку...'
+                        echo 'Зависимости уже установлены.'
                     }
                 }
             }
         }
-        stage('Run Semgrep Scan') {
+
+        stage('Сканирование Semgrep') {
             steps {
                 script {
-                    // Установка Semgrep (если не установлен)
-                    def semgrepInstalled = sh(
-                        script: 'command -v semgrep',
-                        returnStatus: true
-                    ) == 0
-                    
-                    if (!semgrepInstalled) {
-                        echo 'Semgrep не установлен. Начинаю установку...'
-                        sh 'npm install -g @semgrep/cli'
+                    // Используем официальный образ Semgrep для сканирования
+                    // Ключ --json указывает на формирование отчета в формате JSON
+                    docker.image('semgrep/semgrep').inside {
+                        sh 'semgrep --config="p/default" --error --output="semgrep-report.json" --json .'
                     }
-                    
-                    // Запуск сканирования и сохранение отчета в JSON
-                    sh """
-                    semgrep --config=auto \\
-                            --output=${env.PROJECT_DIR}/semgrep_report.json \\
-                            --json \\
-                            ${env.PROJECT_DIR}
-                    """
-                    
-                    // Проверка наличия отчета
-                    sh 'ls -l ${env.PROJECT_DIR}/semgrep_report.json'
                 }
             }
         }
-        stage('Archive Report') {
+
+        stage('Архивация отчета') {
             steps {
-                // Сохранение JSON-отчета как артефакта
-                archiveArtifacts artifacts: 'semgrep_report.json', allowEmptyArchive: false
+                archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true
             }
         }
     }
+
     post {
-        success {
-            echo 'Сканирование завершено успешно. Отчет сохранен в semgrep_report.json'
-        }
-        failure {
-            echo 'Ошибка сканирования. Проверьте логи.'
+        always {
+            echo 'Пайплайн завершил работу.'
         }
     }
 }
