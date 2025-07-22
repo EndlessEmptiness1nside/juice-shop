@@ -12,8 +12,7 @@ pipeline {
         stage('Check and Install Dependencies') {
             steps {
                 script {
-                    // Используем .inside() с аргументом -e для установки переменных окружения
-                    // для npm и Cypress
+                    // Устанавливаем переменную окружения для Cypress напрямую
                     docker.image('node:20').inside('-e CYPRESS_CACHE_FOLDER=./.cache/Cypress') {
                         if (fileExists('node_modules')) {
                             echo "Зависимости уже установлены, пропуск установки."
@@ -29,9 +28,10 @@ pipeline {
         stage('Semgrep Scan') {
             steps {
                 script {
-                    // Передаем переменную окружения SEMGREP_HOME напрямую в контейнер
-                    // с помощью аргумента -e.
-                    docker.image('semgrep/semgrep').inside('-e SEMGREP_HOME=./.semgrep-home') {
+                    // **ФИНАЛЬНОЕ РЕШЕНИЕ:**
+                    // Устанавливаем переменную HOME равной текущей рабочей директории.
+                    // Это заставит Semgrep создать свою папку .semgrep внутри нашего проекта.
+                    docker.image('semgrep/semgrep').inside('-e HOME=.') {
                         echo "Запуск сканирования Semgrep..."
                         sh 'semgrep scan --config="p/default" --error --output="semgrep-report.json" --json .'
                     }
@@ -41,10 +41,9 @@ pipeline {
     }
 
     post {
-        // Блок always гарантирует, что артефакты будут заархивированы
-        // даже если этап сканирования завершится с ошибкой (например, из-за --error)
         always {
             echo "Архивация отчета Semgrep..."
+            // allowEmptyArchive: true предотвращает ошибку, если отчет не был создан
             archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true, allowEmptyArchive: true
             
             echo "Пайплайн завершил работу."
