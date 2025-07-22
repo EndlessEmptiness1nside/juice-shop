@@ -14,15 +14,13 @@ pipeline {
         stage('Check and Install Dependencies') {
             steps {
                 script {
-                    // Используем образ Node.js для работы с npm
                     docker.image('node:20').inside {
-                        // Проверяем, существует ли папка node_modules
                         if (fileExists('node_modules')) {
                             echo "Зависимости уже установлены, пропуск установки."
                         } else {
                             echo "Папка node_modules не найдена. Установка зависимостей..."
-                            // Если папки нет, выполняем npm install
-                            sh 'npm install'
+                            // Указываем npm использовать локальную папку для кэша, чтобы избежать проблем с правами доступа
+                            sh 'npm install --cache ./.npm-cache --no-update-notifier'
                         }
                     }
                 }
