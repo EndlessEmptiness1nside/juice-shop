@@ -2,51 +2,58 @@ pipeline {
     agent any
 
     stages {
-        stage('Checkout') {
+        stage('Clone repository') {
             steps {
-                git 'https://github.com/juice-shop/juice-shop.git'
+                // Очищаем рабочее пространство перед клонированием
+                cleanWs()
+                // Клонируем репозиторий
+                git url: 'https://github.com/EndlessEmptiness1nside/juice-shop.git', branch: 'master'
             }
         }
 
-        stage('Проверка и установка зависимостей') {
+        stage('Check and Install Dependencies') {
             steps {
                 script {
-                    // Проверяем, существует ли директория node_modules
-                    if (!fileExists('node_modules')) {
-                        echo 'Зависимости не найдены. Запускается npm install...'
-                        // Для установки зависимостей используется образ Node.js
-                        docker.image('node:20').inside {
+                    // Используем образ Node.js для работы с npm
+                    docker.image('node:20').inside {
+                        // Проверяем, существует ли папка node_modules
+                        if (fileExists('node_modules')) {
+                            echo "Зависимости уже установлены, пропуск установки."
+                        } else {
+                            echo "Папка node_modules не найдена. Установка зависимостей..."
+                            // Если папки нет, выполняем npm install
                             sh 'npm install'
                         }
-                    } else {
-                        echo 'Зависимости уже установлены.'
                     }
                 }
             }
         }
 
-        stage('Сканирование Semgrep') {
+        stage('Semgrep Scan') {
             steps {
                 script {
                     // Используем официальный образ Semgrep для сканирования
-                    // Ключ --json указывает на формирование отчета в формате JSON
                     docker.image('semgrep/semgrep').inside {
-                        sh 'semgrep --config="p/default" --error --output="semgrep-report.json" --json .'
+                        echo "Запуск сканирования Semgrep..."
+                        // Команда для сканирования с набором правил по умолчанию ('p/default')
+                        // --error - завершить с ошибкой, если найдены уязвимости
+                        // --json - выводить результат в формате JSON
+                        // --output "semgrep-report.json" - сохранить отчет в файл
+                        sh 'semgrep scan --config="p/default" --error --output="semgrep-report.json" --json .'
                     }
                 }
-            }
-        }
-
-        stage('Архивация отчета') {
-            steps {
-                archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true
             }
         }
     }
 
     post {
         always {
-            echo 'Пайплайн завершил работу.'
+            // Этот блок выполняется всегда в конце сборки
+            echo "Архивация отчета Semgrep..."
+            // Архивируем созданный отчет для доступа из интерфейса Jenkins
+            archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true
+            
+            echo "Пайплайн завершил работу."
         }
     }
 }
