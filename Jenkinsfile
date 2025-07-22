@@ -22,6 +22,7 @@ pipeline {
                 script {
                     // Установка Node.js 22 через nvm (если не установлен)
                     sh 'curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh  | bash'
+                    sh 'touch $HOME/.bashrc'
                     sh 'source ~/.bashrc && nvm install 22 && nvm use 22'
                     sh 'node -v && npm -v'
                 }
