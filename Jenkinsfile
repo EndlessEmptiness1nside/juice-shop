@@ -15,12 +15,15 @@ pipeline {
             steps {
                 script {
                     docker.image('node:20').inside {
-                        if (fileExists('node_modules')) {
-                            echo "Зависимости уже установлены, пропуск установки."
-                        } else {
-                            echo "Папка node_modules не найдена. Установка зависимостей..."
-                            // Указываем npm использовать локальную папку для кэша, чтобы избежать проблем с правами доступа
-                            sh 'npm install --cache ./.npm-cache --no-update-notifier'
+                // Задаем переменную окружения для Cypress, чтобы он создавал кэш локально
+                        withEnv(["CYPRESS_CACHE_FOLDER=./.cache/Cypress"]) {
+                            if (fileExists('node_modules')) {
+                                echo "Зависимости уже установлены, пропуск установки."
+                            } else {
+                                echo "Папка node_modules не найдена. Установка зависимостей..."
+                        // Команда установки остается прежней
+                                sh 'npm install --cache ./.npm-cache --no-update-notifier'
+                            }
                         }
                     }
                 }
