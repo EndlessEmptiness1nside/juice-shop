@@ -4,9 +4,7 @@ pipeline {
     stages {
         stage('Clone repository') {
             steps {
-                // Очищаем рабочее пространство перед клонированием
                 cleanWs()
-                // Клонируем репозиторий
                 git url: 'https://github.com/EndlessEmptiness1nside/juice-shop.git', branch: 'master'
             }
         }
@@ -15,13 +13,12 @@ pipeline {
             steps {
                 script {
                     docker.image('node:20').inside {
-                // Задаем переменную окружения для Cypress, чтобы он создавал кэш локально
+                        // Задаем переменные окружения для Cypress и npm, чтобы они создавали кэш локально
                         withEnv(["CYPRESS_CACHE_FOLDER=./.cache/Cypress"]) {
                             if (fileExists('node_modules')) {
                                 echo "Зависимости уже установлены, пропуск установки."
                             } else {
                                 echo "Папка node_modules не найдена. Установка зависимостей..."
-                        // Команда установки остается прежней
                                 sh 'npm install --cache ./.npm-cache --no-update-notifier'
                             }
                         }
@@ -33,14 +30,12 @@ pipeline {
         stage('Semgrep Scan') {
             steps {
                 script {
-                    // Используем официальный образ Semgrep для сканирования
                     docker.image('semgrep/semgrep').inside {
                         echo "Запуск сканирования Semgrep..."
-                        // Команда для сканирования с набором правил по умолчанию ('p/default')
-                        // --error - завершить с ошибкой, если найдены уязвимости
-                        // --json - выводить результат в формате JSON
-                        // --output "semgrep-report.json" - сохранить отчет в файл
-                        sh 'semgrep scan --config="p/default" --error --output="semgrep-report.json" --json .'
+                        // Устанавливаем переменную SEMGREP_HOME, чтобы избежать проблем с правами доступа
+                        withEnv(["SEMGREP_HOME=./.semgrep-home"]) {
+                            sh 'semgrep scan --config="p/default" --error --output="semgrep-report.json" --json .'
+                        }
                     }
                 }
             }
@@ -49,9 +44,7 @@ pipeline {
 
     post {
         always {
-            // Этот блок выполняется всегда в конце сборки
             echo "Архивация отчета Semgrep..."
-            // Архивируем созданный отчет для доступа из интерфейса Jenkins
             archiveArtifacts artifacts: 'semgrep-report.json', fingerprint: true
             
             echo "Пайплайн завершил работу."
